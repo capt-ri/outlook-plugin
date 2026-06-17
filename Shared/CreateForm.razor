@@ -1,0 +1,29 @@
+@* Shared subject/location/attendees/time fields. Binds directly to the
+   reference-typed Model so the parent sees edits without EventCallbacks. *@
+<div class="oei-field">
+    <label>Subject</label>
+    <input class="oei-input" @bind="Model.Subject" @bind:event="oninput" />
+</div>
+<div class="oei-field">
+    <label>Location</label>
+    <input class="oei-input" @bind="Model.Location" @bind:event="oninput" />
+</div>
+<div class="oei-field">
+    <label>Required attendees (comma or semicolon separated)</label>
+    <input class="oei-input" @bind="Model.Attendees" @bind:event="oninput"
+           placeholder="alice@contoso.com; bob@contoso.com" />
+</div>
+<div class="oei-grid2 oei-field">
+    <div>
+        <label>Start</label>
+        <input type="datetime-local" class="oei-input" @bind="Model.Start" />
+    </div>
+    <div>
+        <label>End</label>
+        <input type="datetime-local" class="oei-input" @bind="Model.End" />
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CreateFormModel Model { get; set; } = default!;
+}

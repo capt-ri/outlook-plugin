@@ -1,0 +1,141 @@
+@* Read-only inspector for an appointment's identifiers / recurrence / attendees.
+   Shared by read mode and compose mode (data source differs, display is shared). *@
+@inject IJSRuntime JS
+
+@if (Info is null)
+{
+    return;
+}
+
+@if (Info.HasErrors)
+{
+    <div class="oei-warn">
+        @foreach (var e in Info.Errors!)
+        {
+            <div>⚠️ @e</div>
+        }
+    </div>
+}
+
+@if (Info.HostAvailable)
+{
+    <!-- Identifiers (Meeting ID front and centre) -->
+    <div class="oei-card">
+        <div class="hd">Identifiers</div>
+        <div class="bd">
+            <div class="oei-row">
+                <div class="k">Meeting ID (Exchange)</div>
+                @IdValue(Info.ExchangeId, InCompose ? "Not set until saved" : "Not available")
+            </div>
+            <div class="oei-row">
+                <div class="k">Series / master ID</div>
+                @IdValue(Info.SeriesId, "None — this is the master or a single event")
+            </div>
+        </div>
+    </div>
+
+    <!-- POC checks -->
+    <div class="oei-card">
+        <div class="hd">POC checks</div>
+        <div class="oei-check">
+            <span>Recurring flag</span>
+            <span class="oei-pill @(Info.IsRecurring ? "ok" : "no")">@(Info.IsRecurring ? "Recurring" : "Single")</span>
+        </div>
+        <div class="oei-check">
+            <span>Master vs occurrence</span>
+            <span class="oei-pill info">@Info.Classification</span>
+        </div>
+        <div class="oei-check">
+            <span>Meeting ID captured</span>
+            <span class="oei-pill @(string.IsNullOrEmpty(Info.ExchangeId) ? "no" : "ok")">
+                @(string.IsNullOrEmpty(Info.ExchangeId) ? (InCompose ? "needs save" : "no") : "yes")
+            </span>
+        </div>
+        <div class="oei-check">
+            <span>Series link present</span>
+            <span class="oei-pill @(string.IsNullOrEmpty(Info.SeriesId) ? "no" : "ok")">
+                @(string.IsNullOrEmpty(Info.SeriesId) ? "no" : "yes")
+            </span>
+        </div>
+    </div>
+
+    <!-- Details -->
+    <div class="oei-card">
+        <div class="hd">Details</div>
+        <div class="bd">
+            @KvRow("Subject", Info.Subject)
+            @KvRow("Item type", Info.ItemType)
+            @KvRow("Location", Info.Location)
+            @KvRow("Organizer", Info.Organizer)
+            @KvRow("Start", Info.Start)
+            @KvRow("End", Info.End)
+            @KvRow("Required attendees", AttendeeText(Info.RequiredAttendees))
+            @KvRow("Optional attendees", AttendeeText(Info.OptionalAttendees))
+        </div>
+    </div>
+
+    <!-- Recurrence -->
+    @if (Info.IsRecurring)
+    {
+        <div class="oei-card">
+            <div class="hd">Recurrence pattern</div>
+            <div class="bd">
+                @KvRow("Type", Info.RecurrenceType)
+                @KvRow("Time zone", Info.RecurrenceTimeZone)
+                @KvRow("Series start date", Info.SeriesStartDate)
+                @KvRow("Series end date", Info.SeriesEndDate)
+                @KvRow("Daily start time", Info.SeriesStartTime)
+                @KvRow("Daily end time", Info.SeriesEndTime)
+                @KvRow("Duration (min)", Info.SeriesDurationMinutes?.ToString())
+                <div class="oei-row">
+                    <div class="k">Raw recurrenceProperties</div>
+                    <pre class="oei-pre">@Info.RecurrencePropertiesText</pre>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="oei-note">
+        <b>Exceptions &amp; occurrence index.</b> The item-level API gives the recurring
+        flag, master/occurrence (via <code>seriesId</code>) and Meeting IDs — but not a
+        per-occurrence index, the full occurrence list, or a "modified exception" flag with
+        original-vs-new dates. Those need <b>Microsoft Graph</b>.
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public OutlookEventInfo? Info { get; set; }
+    [Parameter] public bool InCompose { get; set; }
+
+    private async Task CopyAsync(string? text)
+    {
+        if (!string.IsNullOrEmpty(text))
+            await JS.InvokeAsync<bool>("officeInterop.copyText", text);
+    }
+
+    private static string AttendeeText(List<string>? list) =>
+        list is { Count: > 0 } ? string.Join("; ", list) : "—";
+
+    private RenderFragment IdValue(string? value, string emptyText) => __builder =>
+    {
+        <div class="oei-id">
+            @if (string.IsNullOrEmpty(value))
+            {
+                <code class="empty">@emptyText</code>
+            }
+            else
+            {
+                <code>@value</code>
+                <button class="oei-copy" title="Copy" @onclick="() => CopyAsync(value)">⧉</button>
+            }
+        </div>
+    };
+
+    private RenderFragment KvRow(string label, string? value) => __builder =>
+    {
+        <div class="oei-row">
+            <div class="k">@label</div>
+            <div class="v">@(string.IsNullOrEmpty(value) ? "—" : value)</div>
+        </div>
+    };
+}

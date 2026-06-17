@@ -1,0 +1,381 @@
+@page "/"
+@using System.Text.Json
+@using System.Globalization
+@implements IDisposable
+@inject IJSRuntime JS
+
+<PageTitle>Outlook Event Inspector</PageTitle>
+
+<div class="oei">
+    <div class="oei-toolbar">
+        @if (_ctx is not null)
+        {
+            <span class="oei-chip dark">@(_ctx.Host ?? "no host")</span>
+            <span class="oei-chip">mode: @_ctx.Mode</span>
+            @if (_live)
+            {
+                <span class="oei-live"><span class="dot"></span> live</span>
+            }
+        }
+    </div>
+
+    @if (_ctx is null)
+    {
+        <div class="oei-note">Initializing…</div>
+    }
+    else if (!_ctx.HostAvailable)
+    {
+        <div class="oei-warn">⚠️ Office.js host not detected. Open this inside Outlook by sideloading the add-in.</div>
+    }
+
+    @* ============================ READ MODE ============================ *@
+    @if (_ctx is { HostAvailable: true, Mode: "read" })
+    {
+        <div class="oei-toolbar">
+            <button class="oei-btn primary sm" @onclick="() => ReadEventAsync()" disabled="@_loading">
+                @(_loading ? "Reading…" : "Read selected event")
+            </button>
+        </div>
+
+        <EventInspector Info="_info" />
+
+        <div class="oei-card accent-primary">
+            <div class="hd">Quick create — new appointment</div>
+            <div class="bd">
+                <div class="oei-note" style="margin-bottom:8px">
+                    Opens Outlook's new-appointment window pre-filled; you review and save.
+                    Single events only — recurrence isn't supported by this API.
+                </div>
+                <CreateForm Model="_form" />
+                <button class="oei-btn primary sm" @onclick="QuickCreateAsync">Open new appointment form</button>
+                @if (_createMsg is not null)
+                {
+                    <div class="mt-2 @(_createOk ? "oei-msg-ok" : "oei-msg-err")" style="margin-top:8px">@_createMsg</div>
+                }
+            </div>
+        </div>
+    }
+
+    @* ============================ COMPOSE MODE ============================ *@
+    @if (_ctx is { HostAvailable: true, Mode: "compose" })
+    {
+        <div class="oei-toolbar">
+            <button class="oei-btn primary sm" @onclick="() => ReadComposeAsync(true)" disabled="@_loading">
+                @(_loading ? "Reading…" : "Refresh from event")
+            </button>
+            @if (_info is not null && string.IsNullOrEmpty(_info.ExchangeId))
+            {
+                <button class="oei-btn sm" @onclick="SaveForIdAsync">Save to reveal Meeting ID</button>
+            }
+        </div>
+        @if (_saveMsg is not null)
+        {
+            <div class="@(_saveOk ? "oei-msg-ok" : "oei-msg-err")" style="margin-bottom:8px">@_saveMsg</div>
+        }
+
+        <EventInspector Info="_info" InCompose="true" />
+
+        <div class="oei-card accent-green">
+            <div class="hd">Apply changes to this appointment</div>
+            <div class="bd">
+                <div class="oei-note" style="margin-bottom:8px">
+                    Pre-filled from the open event. Edit and apply to write back; tick
+                    "Make recurring" to set a pattern via <code>recurrence.setAsync</code>.
+                </div>
+                <CreateForm Model="_form" />
+
+                <label class="oei-check2">
+                    <input type="checkbox" @bind="_cRecurring" />
+                    <b>Make recurring</b>
+                </label>
+
+                @if (_cRecurring)
+                {
+                    <div class="oei-grid2 oei-field">
+                        <div>
+                            <label>Repeats</label>
+                            <select class="oei-select" @bind="_cRecType">
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Every (interval)</label>
+                            <input type="number" min="1" class="oei-input" @bind="_cInterval" />
+                        </div>
+                        <div>
+                            <label>Until</label>
+                            <input type="date" class="oei-input" @bind="_cUntil" />
+                        </div>
+                    </div>
+
+                    @if (_cRecType == "weekly")
+                    {
+                        <div class="oei-field">
+                            <label>On days</label>
+                            <div class="oei-days">
+                                @foreach (var d in Weekdays)
+                                {
+                                    <span class="oei-day @(_cDays.Contains(d.Key) ? "on" : "")"
+                                          @onclick="() => ToggleDay(d.Key)">@d.Value</span>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+
+                <button class="oei-btn green sm" @onclick="ApplyComposeAsync">Apply to appointment</button>
+
+                @if (_composeResult is not null)
+                {
+                    <div style="margin-top:8px">
+                        @foreach (var e in _composeResult.Errors)
+                        {
+                            <div class="oei-msg-err">⚠️ @e</div>
+                        }
+                        <table class="oei-status">
+                            <tbody>
+                                @foreach (var r in _composeResult.Results)
+                                {
+                                    <tr>
+                                        <td>@r.Field</td>
+                                        <td>
+                                            <span class="oei-pill @(r.Status == "succeeded" ? "ok" : "no")">@r.Status</span>
+                                            @if (!string.IsNullOrEmpty(r.Error))
+                                            {
+                                                <span class="oei-msg-err" style="margin-left:6px">@r.Error</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private OfficeContext? _ctx;
+    private OutlookEventInfo? _info;
+    private bool _loading;
+    private bool _live;
+    private DotNetObjectReference<Home>? _selfRef;
+
+    // Shared create/edit form state
+    private readonly CreateFormModel _form = new() { Start = DefaultStart(), End = DefaultEnd() };
+
+    // Compose recurrence state
+    private bool _cRecurring;
+    private string _cRecType = "weekly";
+    private int _cInterval = 1;
+    private DateOnly _cUntil = DefaultUntil();
+    private readonly HashSet<string> _cDays = new() { "mon" };
+
+    // Results / messages
+    private string? _createMsg;
+    private bool _createOk;
+    private string? _saveMsg;
+    private bool _saveOk;
+    private ComposeResult? _composeResult;
+
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+
+    private static readonly (string Key, string Value)[] Weekdays =
+    {
+        ("mon", "Mon"), ("tue", "Tue"), ("wed", "Wed"), ("thu", "Thu"),
+        ("fri", "Fri"), ("sat", "Sat"), ("sun", "Sun")
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var ctxJson = await JS.InvokeAsync<string>("officeInterop.getContext");
+            _ctx = JsonSerializer.Deserialize<OfficeContext>(ctxJson, JsonOpts);
+            _selfRef = DotNetObjectReference.Create(this);
+
+            if (_ctx is { HostAvailable: true, Mode: "read" })
+            {
+                // Realtime: refresh when the user selects a different appointment.
+                _live = await JS.InvokeAsync<bool>("officeInterop.registerItemChanged", _selfRef);
+                await ReadEventAsync();
+            }
+            else if (_ctx is { HostAvailable: true, Mode: "compose" })
+            {
+                // Realtime: refresh when time / recurrence / location change.
+                _live = await JS.InvokeAsync<bool>("officeInterop.registerComposeChanges", _selfRef);
+                await ReadComposeAsync(prefill: true);
+            }
+            StateHasChanged();
+        }
+        catch
+        {
+            _ctx ??= new OfficeContext { HostAvailable = false, Mode = "none" };
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable] public Task OnItemChanged() => ReadEventAsync();
+
+    // Live compose change: refresh the inspector but DON'T re-prefill the editable
+    // form, so the user's in-progress edits are preserved.
+    [JSInvokable] public Task OnComposeChanged() => ReadComposeAsync(prefill: false);
+
+    private async Task ReadEventAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var json = await JS.InvokeAsync<string>("officeInterop.getSelectedEvent");
+            _info = JsonSerializer.Deserialize<OutlookEventInfo>(json, JsonOpts);
+        }
+        catch (Exception ex)
+        {
+            _info = new OutlookEventInfo { HostAvailable = false, Errors = new() { $"Interop error: {ex.Message}" } };
+        }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    private async Task ReadComposeAsync(bool prefill)
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var json = await JS.InvokeAsync<string>("officeInterop.getComposeEvent");
+            _info = JsonSerializer.Deserialize<OutlookEventInfo>(json, JsonOpts);
+            if (prefill) PrefillFormFrom(_info);
+        }
+        catch (Exception ex)
+        {
+            _info = new OutlookEventInfo { HostAvailable = false, Errors = new() { $"Interop error: {ex.Message}" } };
+        }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    private void PrefillFormFrom(OutlookEventInfo? info)
+    {
+        if (info is null) return;
+        _form.Subject = info.Subject ?? "";
+        _form.Location = info.Location ?? "";
+        _form.Attendees = info.RequiredAttendeeEmails is { Count: > 0 }
+            ? string.Join("; ", info.RequiredAttendeeEmails) : "";
+        if (TryParseIsoLocal(info.Start, out var s)) _form.Start = s;
+        if (TryParseIsoLocal(info.End, out var e)) _form.End = e;
+        if (info.IsRecurring && info.RecurrenceType is "daily" or "weekly")
+            _cRecType = info.RecurrenceType;
+    }
+
+    private async Task SaveForIdAsync()
+    {
+        _saveMsg = null;
+        try
+        {
+            var json = await JS.InvokeAsync<string>("officeInterop.saveAndGetExchangeId");
+            var res = JsonSerializer.Deserialize<SaveIdResult>(json, JsonOpts);
+            if (res?.Ok == true)
+            {
+                _saveOk = true;
+                _saveMsg = "Saved — Meeting ID is now available below.";
+                if (_info is not null) _info.ExchangeId = res.ExchangeId;
+            }
+            else { _saveOk = false; _saveMsg = $"Save failed: {res?.Error}"; }
+        }
+        catch (Exception ex) { _saveOk = false; _saveMsg = $"Interop error: {ex.Message}"; }
+    }
+
+    private async Task QuickCreateAsync()
+    {
+        var p = new
+        {
+            subject = _form.Subject,
+            location = _form.Location,
+            requiredAttendees = ParseAttendees(_form.Attendees),
+            startIso = _form.StartIso,
+            endIso = _form.EndIso
+        };
+        try
+        {
+            var json = await JS.InvokeAsync<string>("officeInterop.displayNewAppointment", JsonSerializer.Serialize(p));
+            var res = JsonSerializer.Deserialize<DisplayResult>(json, JsonOpts);
+            _createOk = res?.Ok == true;
+            _createMsg = _createOk ? "New appointment form opened — review and Save in Outlook." : $"Could not open form: {res?.Error}";
+        }
+        catch (Exception ex) { _createOk = false; _createMsg = $"Interop error: {ex.Message}"; }
+    }
+
+    private async Task ApplyComposeAsync()
+    {
+        object? recurrence = null;
+        if (_cRecurring)
+        {
+            recurrence = new
+            {
+                type = _cRecType,
+                interval = _cInterval,
+                days = _cRecType == "weekly" ? _cDays.ToArray() : Array.Empty<string>(),
+                startIso = _form.StartIso,
+                endDateIso = _cUntil.ToString("yyyy-MM-dd"),
+                durationMinutes = DurationMinutes(_form.Start, _form.End)
+            };
+        }
+
+        var p = new
+        {
+            subject = _form.Subject,
+            location = _form.Location,
+            requiredAttendees = ParseAttendees(_form.Attendees),
+            startIso = _form.StartIso,
+            endIso = _form.EndIso,
+            recurrence
+        };
+
+        try
+        {
+            var json = await JS.InvokeAsync<string>("officeInterop.setComposeFields", JsonSerializer.Serialize(p));
+            _composeResult = JsonSerializer.Deserialize<ComposeResult>(json, JsonOpts);
+        }
+        catch (Exception ex)
+        {
+            _composeResult = new ComposeResult { Errors = { $"Interop error: {ex.Message}" } };
+        }
+    }
+
+    private void ToggleDay(string key)
+    {
+        if (!_cDays.Add(key)) _cDays.Remove(key);
+    }
+
+    // ---- helpers ----------------------------------------------------------
+    private static string[] ParseAttendees(string raw) =>
+        string.IsNullOrWhiteSpace(raw)
+            ? Array.Empty<string>()
+            : raw.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static bool TryParseIsoLocal(string? iso, out DateTime value)
+    {
+        if (!string.IsNullOrEmpty(iso) &&
+            DateTime.TryParse(iso, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var utc))
+        {
+            value = utc.ToLocalTime();
+            return true;
+        }
+        value = default;
+        return false;
+    }
+
+    private static int DurationMinutes(DateTime start, DateTime end) =>
+        end > start ? (int)(end - start).TotalMinutes : 30;
+
+    private static DateTime DefaultStart() => DateTime.Now.Date.AddDays(1).AddHours(9);
+    private static DateTime DefaultEnd() => DateTime.Now.Date.AddDays(1).AddHours(9).AddMinutes(30);
+    private static DateOnly DefaultUntil() => DateOnly.FromDateTime(DateTime.Now.Date.AddMonths(1));
+
+    public void Dispose() => _selfRef?.Dispose();
+}

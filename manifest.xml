@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:mailappor="http://schemas.microsoft.com/office/mailappversionoverrides"
+  xsi:type="MailApp">
+
+  <Id>c19c5258-df75-41d1-93dd-18f72e77eeaf</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Outlook Event POC</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Event Inspector"/>
+  <Description DefaultValue="Reads recurrence, master/occurrence classification and Exchange IDs from the selected Outlook appointment."/>
+  <IconUrl DefaultValue="https://localhost:7010/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:7010/assets/icon-80.png"/>
+  <SupportUrl DefaultValue="https://localhost:7010/"/>
+
+  <AppDomains>
+    <AppDomain>https://localhost:7010</AppDomain>
+  </AppDomains>
+
+  <Hosts>
+    <Host Name="Mailbox"/>
+  </Hosts>
+
+  <Requirements>
+    <Sets>
+      <!-- Mailbox 1.7 is required for item.recurrence and item.seriesId -->
+      <Set Name="Mailbox" MinVersion="1.7"/>
+    </Sets>
+  </Requirements>
+
+  <!-- Legacy fallback for older clients: task pane on appointment read -->
+  <FormSettings>
+    <Form xsi:type="ItemRead">
+      <DesktopSettings>
+        <SourceLocation DefaultValue="https://localhost:7010/"/>
+        <RequestedHeight>450</RequestedHeight>
+      </DesktopSettings>
+    </Form>
+  </FormSettings>
+
+  <!-- ReadWriteItem is required so the compose path can call *.setAsync / recurrence.setAsync -->
+  <Permissions>ReadWriteItem</Permissions>
+
+  <Rule xsi:type="RuleCollection" Mode="Or">
+    <Rule xsi:type="ItemIs" ItemType="Appointment" FormType="Read"/>
+  </Rule>
+
+  <DisableEntityHighlighting>false</DisableEntityHighlighting>
+
+  <!-- Modern clients: ribbon button that opens the task pane.
+       The OUTER block must be the base (v1.0) namespace; the NESTED v1.1 block
+       adds <SupportsPinning> for clients that understand it. -->
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Requirements>
+      <bt:Sets DefaultMinVersion="1.7">
+        <bt:Set Name="Mailbox"/>
+      </bt:Sets>
+    </Requirements>
+
+    <Hosts>
+      <Host xsi:type="MailHost">
+        <DesktopFormFactor>
+          <FunctionFile resid="functionUrl"/>
+
+          <!-- Surface shown when READING an appointment (attendee/organizer view) -->
+          <ExtensionPoint xsi:type="AppointmentAttendeeCommandSurface">
+            <OfficeTab id="TabDefaultRead">
+              <Group id="evtGroupRead">
+                <Label resid="groupLabel"/>
+                <Control xsi:type="Button" id="evtOpenButtonRead">
+                  <Label resid="btnLabel"/>
+                  <Supertip>
+                    <Title resid="btnLabel"/>
+                    <Description resid="btnTip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="icon16"/>
+                    <bt:Image size="32" resid="icon32"/>
+                    <bt:Image size="80" resid="icon80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <SourceLocation resid="taskpaneUrl"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+
+          <!-- Surface shown when COMPOSING (creating/editing) an appointment -->
+          <ExtensionPoint xsi:type="AppointmentOrganizerCommandSurface">
+            <OfficeTab id="TabDefaultCompose">
+              <Group id="evtGroupCompose">
+                <Label resid="groupLabel"/>
+                <Control xsi:type="Button" id="evtOpenButtonCompose">
+                  <Label resid="btnComposeLabel"/>
+                  <Supertip>
+                    <Title resid="btnComposeLabel"/>
+                    <Description resid="btnComposeTip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="icon16"/>
+                    <bt:Image size="32" resid="icon32"/>
+                    <bt:Image size="80" resid="icon80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <SourceLocation resid="taskpaneUrl"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+
+    <Resources>
+      <bt:Images>
+        <bt:Image id="icon16" DefaultValue="https://localhost:7010/assets/icon-16.png"/>
+        <bt:Image id="icon32" DefaultValue="https://localhost:7010/assets/icon-32.png"/>
+        <bt:Image id="icon80" DefaultValue="https://localhost:7010/assets/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="functionUrl" DefaultValue="https://localhost:7010/"/>
+        <bt:Url id="taskpaneUrl" DefaultValue="https://localhost:7010/"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="groupLabel" DefaultValue="Event POC"/>
+        <bt:String id="btnLabel" DefaultValue="Inspect Event"/>
+        <bt:String id="btnComposeLabel" DefaultValue="Event Tools"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="btnTip" DefaultValue="Show recurrence, master/occurrence classification and Exchange IDs for the selected appointment."/>
+        <bt:String id="btnComposeTip" DefaultValue="Set fields and a recurrence pattern on the appointment you are creating."/>
+      </bt:LongStrings>
+    </Resources>
+
+    <!-- Nested v1.1 block: same surfaces, but the task panes are PINNABLE. -->
+    <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides/1.1" xsi:type="VersionOverridesV1_1">
+      <Requirements>
+        <bt:Sets DefaultMinVersion="1.7">
+          <bt:Set Name="Mailbox"/>
+        </bt:Sets>
+      </Requirements>
+
+      <Hosts>
+        <Host xsi:type="MailHost">
+          <DesktopFormFactor>
+            <FunctionFile resid="functionUrl"/>
+
+            <ExtensionPoint xsi:type="AppointmentAttendeeCommandSurface">
+              <OfficeTab id="TabDefaultRead">
+                <Group id="evtGroupRead">
+                  <Label resid="groupLabel"/>
+                  <Control xsi:type="Button" id="evtOpenButtonRead">
+                    <Label resid="btnLabel"/>
+                    <Supertip>
+                      <Title resid="btnLabel"/>
+                      <Description resid="btnTip"/>
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="icon16"/>
+                      <bt:Image size="32" resid="icon32"/>
+                      <bt:Image size="80" resid="icon80"/>
+                    </Icon>
+                    <Action xsi:type="ShowTaskpane">
+                      <SourceLocation resid="taskpaneUrl"/>
+                      <!-- Lets the user pin the pane so it stays open and follows each event -->
+                      <SupportsPinning>true</SupportsPinning>
+                    </Action>
+                  </Control>
+                </Group>
+              </OfficeTab>
+            </ExtensionPoint>
+
+            <ExtensionPoint xsi:type="AppointmentOrganizerCommandSurface">
+              <OfficeTab id="TabDefaultCompose">
+                <Group id="evtGroupCompose">
+                  <Label resid="groupLabel"/>
+                  <Control xsi:type="Button" id="evtOpenButtonCompose">
+                    <Label resid="btnComposeLabel"/>
+                    <Supertip>
+                      <Title resid="btnComposeLabel"/>
+                      <Description resid="btnComposeTip"/>
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="icon16"/>
+                      <bt:Image size="32" resid="icon32"/>
+                      <bt:Image size="80" resid="icon80"/>
+                    </Icon>
+                    <Action xsi:type="ShowTaskpane">
+                      <SourceLocation resid="taskpaneUrl"/>
+                      <SupportsPinning>true</SupportsPinning>
+                    </Action>
+                  </Control>
+                </Group>
+              </OfficeTab>
+            </ExtensionPoint>
+          </DesktopFormFactor>
+        </Host>
+      </Hosts>
+
+      <Resources>
+        <bt:Images>
+          <bt:Image id="icon16" DefaultValue="https://localhost:7010/assets/icon-16.png"/>
+          <bt:Image id="icon32" DefaultValue="https://localhost:7010/assets/icon-32.png"/>
+          <bt:Image id="icon80" DefaultValue="https://localhost:7010/assets/icon-80.png"/>
+        </bt:Images>
+        <bt:Urls>
+          <bt:Url id="functionUrl" DefaultValue="https://localhost:7010/"/>
+          <bt:Url id="taskpaneUrl" DefaultValue="https://localhost:7010/"/>
+        </bt:Urls>
+        <bt:ShortStrings>
+          <bt:String id="groupLabel" DefaultValue="Event POC"/>
+          <bt:String id="btnLabel" DefaultValue="Inspect Event"/>
+          <bt:String id="btnComposeLabel" DefaultValue="Event Tools"/>
+        </bt:ShortStrings>
+        <bt:LongStrings>
+          <bt:String id="btnTip" DefaultValue="Show recurrence, master/occurrence classification and Exchange IDs for the selected appointment."/>
+          <bt:String id="btnComposeTip" DefaultValue="Set fields and a recurrence pattern on the appointment you are creating."/>
+        </bt:LongStrings>
+      </Resources>
+    </VersionOverrides>
+  </VersionOverrides>
+</OfficeApp>
