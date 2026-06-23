@@ -112,6 +112,30 @@
               </Group>
             </OfficeTab>
           </ExtensionPoint>
+
+          <!-- Surface shown when READING an email message -->
+          <ExtensionPoint xsi:type="MessageReadCommandSurface">
+            <OfficeTab id="TabDefaultMsgRead">
+              <Group id="msgGroupRead">
+                <Label resid="groupLabel"/>
+                <Control xsi:type="Button" id="msgOpenButtonRead">
+                  <Label resid="btnEmailLabel"/>
+                  <Supertip>
+                    <Title resid="btnEmailLabel"/>
+                    <Description resid="btnEmailTip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="icon16"/>
+                    <bt:Image size="32" resid="icon32"/>
+                    <bt:Image size="80" resid="icon80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <SourceLocation resid="taskpaneEmailUrl"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
         </DesktopFormFactor>
       </Host>
     </Hosts>
@@ -125,15 +149,18 @@
       <bt:Urls>
         <bt:Url id="functionUrl" DefaultValue="https://localhost:7010/"/>
         <bt:Url id="taskpaneUrl" DefaultValue="https://localhost:7010/"/>
+        <bt:Url id="taskpaneEmailUrl" DefaultValue="https://localhost:7010/email"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="groupLabel" DefaultValue="Event POC"/>
         <bt:String id="btnLabel" DefaultValue="Inspect Event"/>
         <bt:String id="btnComposeLabel" DefaultValue="Event Tools"/>
+        <bt:String id="btnEmailLabel" DefaultValue="Inspect Email"/>
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="btnTip" DefaultValue="Show recurrence, master/occurrence classification and Exchange IDs for the selected appointment."/>
         <bt:String id="btnComposeTip" DefaultValue="Set fields and a recurrence pattern on the appointment you are creating."/>
+        <bt:String id="btnEmailTip" DefaultValue="Show sender, recipients, IDs and attachments for the selected email."/>
       </bt:LongStrings>
     </Resources>
 
@@ -198,6 +225,31 @@
                 </Group>
               </OfficeTab>
             </ExtensionPoint>
+
+            <!-- Surface shown when READING an email message (pinnable) -->
+            <ExtensionPoint xsi:type="MessageReadCommandSurface">
+              <OfficeTab id="TabDefaultMsgRead">
+                <Group id="msgGroupRead">
+                  <Label resid="groupLabel"/>
+                  <Control xsi:type="Button" id="msgOpenButtonRead">
+                    <Label resid="btnEmailLabel"/>
+                    <Supertip>
+                      <Title resid="btnEmailLabel"/>
+                      <Description resid="btnEmailTip"/>
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="icon16"/>
+                      <bt:Image size="32" resid="icon32"/>
+                      <bt:Image size="80" resid="icon80"/>
+                    </Icon>
+                    <Action xsi:type="ShowTaskpane">
+                      <SourceLocation resid="taskpaneEmailUrl"/>
+                      <SupportsPinning>true</SupportsPinning>
+                    </Action>
+                  </Control>
+                </Group>
+              </OfficeTab>
+            </ExtensionPoint>
           </DesktopFormFactor>
         </Host>
       </Hosts>
@@ -211,15 +263,18 @@
         <bt:Urls>
           <bt:Url id="functionUrl" DefaultValue="https://localhost:7010/"/>
           <bt:Url id="taskpaneUrl" DefaultValue="https://localhost:7010/"/>
+          <bt:Url id="taskpaneEmailUrl" DefaultValue="https://localhost:7010/email"/>
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="groupLabel" DefaultValue="Event POC"/>
           <bt:String id="btnLabel" DefaultValue="Inspect Event"/>
           <bt:String id="btnComposeLabel" DefaultValue="Event Tools"/>
+          <bt:String id="btnEmailLabel" DefaultValue="Inspect Email"/>
         </bt:ShortStrings>
         <bt:LongStrings>
           <bt:String id="btnTip" DefaultValue="Show recurrence, master/occurrence classification and Exchange IDs for the selected appointment."/>
           <bt:String id="btnComposeTip" DefaultValue="Set fields and a recurrence pattern on the appointment you are creating."/>
+          <bt:String id="btnEmailTip" DefaultValue="Show sender, recipients, IDs and attachments for the selected email."/>
         </bt:LongStrings>
       </Resources>
     </VersionOverrides>

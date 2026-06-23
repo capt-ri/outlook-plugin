@@ -8,9 +8,11 @@
 
 <div class="oei">
     <div class="oei-toolbar">
+        <span class="oei-chip dark">Calendar</span>
+        <a class="oei-chip" href="/email">Email</a>
         @if (_ctx is not null)
         {
-            <span class="oei-chip dark">@(_ctx.Host ?? "no host")</span>
+            <span class="oei-chip">@(_ctx.Host ?? "no host")</span>
             <span class="oei-chip">mode: @_ctx.Mode</span>
             @if (_live)
             {
@@ -36,6 +38,13 @@
                 @(_loading ? "Reading…" : "Read selected event")
             </button>
         </div>
+
+        @if (_info is { HostAvailable: true })
+        {
+            <SyncBanner Kind="event"
+                        ItemId="@(!string.IsNullOrEmpty(_info.ExchangeId) ? _info.ExchangeId : _info.SeriesId)"
+                        Subject="@_info.Subject" />
+        }
 
         <EventInspector Info="_info" />
 
@@ -71,6 +80,13 @@
         @if (_saveMsg is not null)
         {
             <div class="@(_saveOk ? "oei-msg-ok" : "oei-msg-err")" style="margin-bottom:8px">@_saveMsg</div>
+        }
+
+        @if (_info is { HostAvailable: true })
+        {
+            <SyncBanner Kind="event"
+                        ItemId="@(!string.IsNullOrEmpty(_info.ExchangeId) ? _info.ExchangeId : _info.SeriesId)"
+                        Subject="@_info.Subject" />
         }
 
         <EventInspector Info="_info" InCompose="true" />
@@ -200,8 +216,10 @@
 
             if (_ctx is { HostAvailable: true, Mode: "read" })
             {
-                // Realtime: refresh when the user selects a different appointment.
-                _live = await JS.InvokeAsync<bool>("officeInterop.registerItemChanged", _selfRef);
+                // Realtime: ItemChanged (desktop/pinned) + polling fallback for web.
+                var handler = await JS.InvokeAsync<bool>("officeInterop.registerItemChanged", _selfRef);
+                var poll = await JS.InvokeAsync<bool>("officeInterop.startItemPolling", _selfRef, 2000);
+                _live = handler || poll;
                 await ReadEventAsync();
             }
             else if (_ctx is { HostAvailable: true, Mode: "compose" })
@@ -377,5 +395,9 @@
     private static DateTime DefaultEnd() => DateTime.Now.Date.AddDays(1).AddHours(9).AddMinutes(30);
     private static DateOnly DefaultUntil() => DateOnly.FromDateTime(DateTime.Now.Date.AddMonths(1));
 
-    public void Dispose() => _selfRef?.Dispose();
+    public void Dispose()
+    {
+        try { _ = JS.InvokeVoidAsync("officeInterop.stopItemPolling"); } catch { }
+        _selfRef?.Dispose();
+    }
 }

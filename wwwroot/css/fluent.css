@@ -83,6 +83,15 @@ body {
 
 pre.oei-pre { font-family: ui-monospace, Consolas, monospace; font-size: 11px; background: var(--oei-bg-soft); border: 1px solid var(--oei-line-soft); border-radius: 4px; padding: 8px; white-space: pre-wrap; margin: 6px 0 0; }
 
+/* Loud Salesforce sync banner */
+.oei-banner { border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; text-align: center; }
+.oei-banner .big { font-size: 15px; font-weight: 800; letter-spacing: .5px; line-height: 1.2; }
+.oei-banner .sub { font-size: 11px; margin-top: 3px; opacity: .95; word-break: break-all; }
+.oei-banner.synced { background: #0e700e; color: #fff; box-shadow: 0 1px 6px rgba(14,112,14,.35); }
+.oei-banner.notsynced { background: #fff4ce; color: #6b5400; border: 2px solid #f2c94c; }
+.oei-banner.msg { background: #cfe4fa; color: #0b4a86; font-weight: 700; }
+.oei-banner.unknown { background: #f3f2f1; color: #616161; }
+
 .oei-status { font-size: 12px; }
 .oei-status td { padding: 3px 0; }
 .oei-status td:first-child { color: var(--oei-muted); padding-right: 8px; }

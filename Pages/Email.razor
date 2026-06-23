@@ -1,0 +1,219 @@
+@page "/email"
+@using System.Text.Json
+@implements IDisposable
+@inject IJSRuntime JS
+
+<PageTitle>Email Inspector</PageTitle>
+
+<div class="oei">
+    <div class="oei-toolbar">
+        <a class="oei-chip" href="/">Calendar</a>
+        <span class="oei-chip dark">Email</span>
+        @if (_info is not null)
+        {
+            <span class="oei-chip">mode: @(_info.Mode ?? "—")</span>
+            @if (_live && !IsWeb)
+            {
+                <span class="oei-live"><span class="dot"></span> live</span>
+            }
+        }
+    </div>
+
+    <div class="oei-toolbar">
+        <button class="oei-btn primary sm" @onclick="ReadMessageAsync" disabled="@_loading">
+            @(_loading ? "Reading…" : "Read selected email")
+        </button>
+    </div>
+
+    @if (IsWeb)
+    {
+        <div class="oei-warn">
+            On Outlook on the web, this add-in only reads the email it was <b>opened on</b> —
+            selecting a different email won't update it (the web host doesn't expose that, and
+            pinning isn't supported on the web). To inspect another email, <b>close and reopen</b>
+            the add-in on it, or use <b>classic Outlook for Windows/Mac</b> (where pinning makes it follow).
+        </div>
+    }
+    else if (_live)
+    {
+        <div class="oei-note" style="margin-bottom:8px">
+            Auto-updates as you select different emails. Keep this pane open while you click through your inbox.
+        </div>
+    }
+
+    @if (_info is null && !_loading)
+    {
+        <div class="oei-note">Open an email and click <b>Read selected email</b>.</div>
+    }
+
+    @if (_info is not null)
+    {
+        @if (_info.HasErrors)
+        {
+            <div class="oei-warn">
+                @foreach (var e in _info.Errors!)
+                {
+                    <div>⚠️ @e</div>
+                }
+            </div>
+        }
+
+        @if (_info is { HostAvailable: true, IsMessage: true })
+        {
+            <SyncBanner Kind="email"
+                        ItemId="@(!string.IsNullOrEmpty(_info.InternetMessageId) ? _info.InternetMessageId : _info.ItemId)"
+                        Subject="@_info.Subject" />
+
+            <!-- Identifiers -->
+            <div class="oei-card">
+                <div class="hd">Identifiers</div>
+                <div class="bd">
+                    <div class="oei-row">
+                        <div class="k">Message ID (Exchange)</div>
+                        @IdValue(_info.ItemId, _info.Mode == "compose" ? "Not set until saved" : "Not available")
+                    </div>
+                    <div class="oei-row">
+                        <div class="k">Conversation ID</div>
+                        @IdValue(_info.ConversationId, "None")
+                    </div>
+                    <div class="oei-row">
+                        <div class="k">Internet Message ID</div>
+                        @IdValue(_info.InternetMessageId, "None")
+                    </div>
+                </div>
+            </div>
+
+            <!-- Details -->
+            <div class="oei-card">
+                <div class="hd">Details</div>
+                <div class="bd">
+                    @KvRow("Subject", _info.Subject)
+                    @KvRow("Normalized subject", _info.NormalizedSubject)
+                    @KvRow("From", _info.From)
+                    @KvRow("Sender", _info.Sender)
+                    @KvRow("To", ListText(_info.To))
+                    @KvRow("Cc", ListText(_info.Cc))
+                    @KvRow("Bcc", ListText(_info.Bcc))
+                    @KvRow("Received / created", _info.DateTimeCreated)
+                    @KvRow("Modified", _info.DateTimeModified)
+                </div>
+            </div>
+
+            <!-- Attachments -->
+            <div class="oei-card">
+                <div class="hd">Attachments (@(_info.Attachments?.Count ?? 0))</div>
+                <div class="bd">
+                    @if (_info.Attachments is { Count: > 0 })
+                    {
+                        @foreach (var a in _info.Attachments)
+                        {
+                            <div class="oei-row">
+                                <div class="v">@a.Name</div>
+                                <div class="k">@a.Type · @FormatSize(a.Size)@(a.IsInline ? " · inline" : "")</div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="v">—</div>
+                    }
+                </div>
+            </div>
+
+            <div class="oei-note">
+                Read-mode email properties via Office.js. <code>conversationId</code> groups a
+                thread; <code>internetMessageId</code> is the RFC mail id (stable across mailboxes).
+                As with appointments, <code>itemId</code> is only available after save in compose mode.
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private OutlookMessageInfo? _info;
+    private bool _loading;
+    private bool _live;
+    private DotNetObjectReference<Email>? _selfRef;
+
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+
+    private bool IsWeb => string.Equals(_info?.Platform, "OfficeOnline", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            _selfRef = DotNetObjectReference.Create(this);
+            // Realtime: ItemChanged (desktop/pinned) + a polling fallback for
+            // web/outlook.com where ItemChanged/pinning isn't supported.
+            var handler = await JS.InvokeAsync<bool>("officeInterop.registerItemChanged", _selfRef);
+            var poll = await JS.InvokeAsync<bool>("officeInterop.startItemPolling", _selfRef, 2000);
+            _live = handler || poll;
+            await ReadMessageAsync();
+        }
+        catch
+        {
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable] public Task OnItemChanged() => ReadMessageAsync();
+
+    private async Task ReadMessageAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var json = await JS.InvokeAsync<string>("officeInterop.getSelectedMessage");
+            _info = JsonSerializer.Deserialize<OutlookMessageInfo>(json, JsonOpts);
+        }
+        catch (Exception ex)
+        {
+            _info = new OutlookMessageInfo { HostAvailable = false, Errors = new() { $"Interop error: {ex.Message}" } };
+        }
+        finally { _loading = false; StateHasChanged(); }
+    }
+
+    private async Task CopyAsync(string? text)
+    {
+        if (!string.IsNullOrEmpty(text))
+            await JS.InvokeAsync<bool>("officeInterop.copyText", text);
+    }
+
+    private static string ListText(List<string>? list) =>
+        list is { Count: > 0 } ? string.Join("; ", list) : "—";
+
+    private static string FormatSize(int bytes) =>
+        bytes >= 1024 ? $"{bytes / 1024.0:0.#} KB" : $"{bytes} B";
+
+    private RenderFragment IdValue(string? value, string emptyText) => __builder =>
+    {
+        <div class="oei-id">
+            @if (string.IsNullOrEmpty(value))
+            {
+                <code class="empty">@emptyText</code>
+            }
+            else
+            {
+                <code>@value</code>
+                <button class="oei-copy" title="Copy" @onclick="() => CopyAsync(value)">⧉</button>
+            }
+        </div>
+    };
+
+    private RenderFragment KvRow(string label, string? value) => __builder =>
+    {
+        <div class="oei-row">
+            <div class="k">@label</div>
+            <div class="v">@(string.IsNullOrEmpty(value) ? "—" : value)</div>
+        </div>
+    };
+
+    public void Dispose()
+    {
+        try { _ = JS.InvokeVoidAsync("officeInterop.stopItemPolling"); } catch { }
+        _selfRef?.Dispose();
+    }
+}

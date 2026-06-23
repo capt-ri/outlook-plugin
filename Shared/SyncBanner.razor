@@ -1,0 +1,115 @@
+@* Loud banner showing whether this email/event is already synced to Salesforce,
+   plus a Sync action that reports "already synced" when applicable. *@
+@inject ISalesforceSync Sync
+@inject IJSRuntime JS
+
+@if (_status is null)
+{
+    <div class="oei-banner unknown"><div class="big">Checking Salesforce…</div></div>
+}
+else if (_status.Unknown)
+{
+    <div class="oei-banner unknown">
+        <div class="big">SYNC STATUS UNKNOWN</div>
+        <div class="sub">No id available yet — open or save this @Kind to check Salesforce.</div>
+    </div>
+}
+else if (_status.IsSynced)
+{
+    <div class="oei-banner synced">
+        <div class="big">✓ ALREADY SYNCED TO SALESFORCE</div>
+        <div class="sub">
+            synced @_status.SyncedAtUtc
+        </div>
+    </div>
+}
+else
+{
+    <div class="oei-banner notsynced">
+        <div class="big">● NOT SYNCED TO SALESFORCE</div>
+        <button class="oei-btn primary sm" @onclick="DoSyncAsync" disabled="@_busy" style="margin-top:6px">
+            @(_busy ? "Syncing…" : "Sync to Salesforce")
+        </button>
+    </div>
+}
+
+@if (_status is not null && !_status.Unknown)
+{
+    <div class="d-flex" style="justify-content:space-between;align-items:center;margin:-4px 0 10px">
+        @if (!string.IsNullOrEmpty(_status.RecordUrl) && _status.IsSynced)
+        {
+            <a class="oei-chip" href="@_status.RecordUrl" target="_blank">Open in Salesforce ↗</a>
+        }
+        else
+        {
+            <span></span>
+        }
+        <button class="oei-copy" title="Toggle mock backend state" @onclick="ToggleMockAsync">
+            mock: @(Sync.SimulateSynced ? "synced" : "not synced")
+        </button>
+    </div>
+}
+
+@if (_msg is not null)
+{
+    <div class="oei-banner msg">@_msg</div>
+}
+
+@code {
+    [Parameter] public string? ItemId { get; set; }
+    [Parameter] public string Kind { get; set; } = "item";   // "email" | "event"
+    [Parameter] public string? Subject { get; set; }
+
+    private SyncStatus? _status;
+    private string? _msg;
+    private bool _busy;
+    private string? _lastChecked;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Re-check whenever the item id changes (e.g. realtime refresh).
+        if (ItemId == _lastChecked) return;
+        _lastChecked = ItemId;
+        _msg = null;
+        _status = await Sync.GetStatusAsync(ItemId, Kind);
+        await UpdateItemBarAsync();
+    }
+
+    private async Task DoSyncAsync()
+    {
+        _busy = true;
+        try
+        {
+            var res = await Sync.SyncAsync(ItemId, Kind, Subject);
+            _status = res.Status;
+            _msg = res.Message;
+            await UpdateItemBarAsync();
+            if (res.AlreadySynced)
+            {
+                // "Message box" inside Outlook via the item notification bar.
+                await ShowBoxAsync($"This {Kind} is already synced to Salesforce.");
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    // Mirror the sync status onto the email/appointment's own notification bar.
+    private async Task UpdateItemBarAsync()
+    {
+        if (_status is null || _status.Unknown) return;
+        try { await JS.InvokeAsync<bool>("officeInterop.setSyncNotification", _status.IsSynced, (string?)null); }
+        catch { }
+    }
+
+    private async Task ToggleMockAsync()
+    {
+        Sync.SimulateSynced = !Sync.SimulateSynced;
+        _lastChecked = null;            // force re-check
+        await OnParametersSetAsync();
+    }
+
+    private async Task ShowBoxAsync(string message)
+    {
+        try { await JS.InvokeVoidAsync("officeInterop.showNotification", message); } catch { }
+    }
+}

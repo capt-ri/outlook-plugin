@@ -4,6 +4,8 @@
 // set a recurrence pattern). All helpers return JSON strings for Blazor.
 (function () {
     let officeReadyPromise = null;
+    let pollTimer = null;
+    let pollLastId = null;
 
     function ensureReady() {
         if (officeReadyPromise) return officeReadyPromise;
@@ -130,6 +132,52 @@
             catch (e) { return false; }
         },
 
+        // Writes a persistent sync-status bar onto the open message/appointment
+        // (the area where "This message is from a trusted sender" appears).
+        // Read mode on the web only supports informational (text) bars — the
+        // action button (insightMessage) is compose-only there.
+        setSyncNotification: function (isSynced, detail) {
+            try {
+                const item = Office.context.mailbox.item;
+                if (!item || !item.notificationMessages || !item.notificationMessages.addAsync) return false;
+                const msg = isSynced
+                    ? ("✓ ALREADY SYNCED TO SALESFORCE" + (detail ? " — " + detail : ""))
+                    : "Not synced to Salesforce — open this add-in to sync.";
+                item.notificationMessages.addAsync("sfSyncStatus", {
+                    type: "informationalMessage",
+                    message: String(msg).substring(0, 150),
+                    icon: "icon16",
+                    persistent: true
+                });
+                return true;
+            } catch (e) { return false; }
+        },
+
+        clearSyncNotification: function () {
+            try { Office.context.mailbox.item.notificationMessages.removeAsync("sfSyncStatus"); } catch (e) { }
+            return true;
+        },
+
+        // Shows an informational bar on the current item (Outlook's built-in
+        // notification "message box"). Falls back to a browser alert.
+        showNotification: function (message) {
+            const text = String(message || "").substring(0, 150);
+            try {
+                const item = Office.context.mailbox.item;
+                if (item && item.notificationMessages && item.notificationMessages.addAsync) {
+                    item.notificationMessages.addAsync("sfSyncMsg", {
+                        type: "informationalMessage",
+                        message: text,
+                        icon: "icon16",
+                        persistent: false
+                    });
+                    return true;
+                }
+            } catch (e) { /* fall through */ }
+            try { window.alert(text); } catch (e) { }
+            return false;
+        },
+
         // READ mode realtime: fires when the user selects a different appointment.
         registerItemChanged: function (dotnetRef) {
             try {
@@ -139,6 +187,36 @@
                     function () { dotnetRef.invokeMethodAsync("OnItemChanged"); });
                 return true;
             } catch (e) { return false; }
+        },
+
+        // Fallback for clients where ItemChanged/pinning isn't supported (e.g.
+        // Outlook on the web / outlook.com). Polls the selected item's id and
+        // invokes OnItemChanged when it changes. Best-effort: only works while the
+        // pane stays open and the host updates Office.context.mailbox.item.
+        startItemPolling: function (dotnetRef, intervalMs) {
+            try {
+                if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+                const getId = function () {
+                    try {
+                        const it = Office.context.mailbox && Office.context.mailbox.item;
+                        return it ? (it.itemId || null) : null;
+                    } catch (e) { return null; }
+                };
+                pollLastId = getId();
+                pollTimer = setInterval(function () {
+                    const cur = getId();
+                    if (cur !== pollLastId) {
+                        pollLastId = cur;
+                        dotnetRef.invokeMethodAsync("OnItemChanged");
+                    }
+                }, intervalMs && intervalMs > 0 ? intervalMs : 2000);
+                return true;
+            } catch (e) { return false; }
+        },
+
+        stopItemPolling: function () {
+            try { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } } catch (e) { }
+            return true;
         },
 
         // COMPOSE mode realtime: fires as the user edits time / recurrence /
@@ -305,6 +383,70 @@
                 return JSON.stringify({ ok: true, exchangeId: res.value || safe(function () { return item.itemId; }) || null });
             }
             return JSON.stringify({ ok: false, error: res && res.error ? res.error.message : "save failed" });
+        },
+
+        // ---- READ: pull info from the selected EMAIL message -------------------
+        getSelectedMessage: async function () {
+            const ready = await ensureReady();
+            const result = { errors: [] };
+
+            if (!ready.available) {
+                result.hostAvailable = false;
+                result.errors.push("Office.js host not detected. Open this inside Outlook by sideloading the add-in.");
+                return JSON.stringify(result);
+            }
+            result.hostAvailable = true;
+            result.host = ready.host;
+            result.platform = ready.platform;
+
+            const mailbox = safe(function () { return Office.context.mailbox; });
+            if (!mailbox) { result.errors.push("Mailbox API unavailable in this context."); return JSON.stringify(result); }
+
+            const item = safe(function () { return mailbox.item; });
+            if (!item) { result.errors.push("No item selected. Open an email message."); return JSON.stringify(result); }
+
+            const msgType = (Office.MailboxEnums && Office.MailboxEnums.ItemType)
+                ? Office.MailboxEnums.ItemType.Message : "message";
+            result.itemType = safe(function () { return String(item.itemType); }) || null;
+            result.isMessage = result.itemType === msgType;
+            if (!result.isMessage) {
+                result.errors.push("The selected item is not an email (it's a " + result.itemType + ").");
+                return JSON.stringify(result);
+            }
+
+            const isCompose = typeof item.subject === "object" && typeof item.subject.setAsync === "function";
+            result.mode = isCompose ? "compose" : "read";
+
+            if (!isCompose) {
+                // Read mode: properties are plain values.
+                result.itemId = safe(function () { return item.itemId; }) || null;
+                result.subject = safe(function () { return item.subject; }) || null;
+                result.normalizedSubject = safe(function () { return item.normalizedSubject; }) || null;
+                result.from = fmtEmail(safe(function () { return item.from; }));
+                result.sender = fmtEmail(safe(function () { return item.sender; }));
+                result.to = (safe(function () { return item.to; }) || []).map(fmtEmail).filter(Boolean);
+                result.cc = (safe(function () { return item.cc; }) || []).map(fmtEmail).filter(Boolean);
+                result.bcc = (safe(function () { return item.bcc; }) || []).map(fmtEmail).filter(Boolean);
+                result.conversationId = safe(function () { return item.conversationId; }) || null;
+                result.internetMessageId = safe(function () { return item.internetMessageId; }) || null;
+                const created = safe(function () { return item.dateTimeCreated; });
+                result.dateTimeCreated = created instanceof Date ? created.toISOString() : (created || null);
+                const modified = safe(function () { return item.dateTimeModified; });
+                result.dateTimeModified = modified instanceof Date ? modified.toISOString() : (modified || null);
+                const atts = safe(function () { return item.attachments; }) || [];
+                result.attachments = atts.map(function (a) {
+                    return { name: a.name, size: a.size, type: String(a.attachmentType), isInline: !!a.isInline };
+                });
+            } else {
+                // Compose mode: async getters (itemId is null until saved).
+                result.itemId = safe(function () { return item.itemId; }) || null;
+                result.subject = await getAsyncValue(function (cb) { item.subject.getAsync(cb); });
+                result.to = (await getAsyncValue(function (cb) { item.to.getAsync(cb); }) || []).map(fmtEmail).filter(Boolean);
+                result.cc = (await getAsyncValue(function (cb) { item.cc.getAsync(cb); }) || []).map(fmtEmail).filter(Boolean);
+                result.conversationId = safe(function () { return item.conversationId; }) || null;
+            }
+
+            return JSON.stringify(result);
         },
 
         // ---- CREATE (simple): pop a pre-filled new-appointment form ------------
