@@ -19,11 +19,19 @@
         }
     </div>
 
-    <div class="oei-toolbar">
-        <button class="oei-btn primary sm" @onclick="ReadMessageAsync" disabled="@_loading">
-            @(_loading ? "Reading…" : "Read selected email")
-        </button>
-    </div>
+    @if (_inOutlook == true)
+    {
+        <div class="oei-toolbar">
+            <button class="oei-btn primary sm" @onclick="ReadMessageAsync" disabled="@_loading">
+                @(_loading ? "Reading…" : "Read selected email")
+            </button>
+        </div>
+    }
+
+    @if (_inOutlook == false)
+    {
+        <DevMockEmail OnApply="ApplyMock" />
+    }
 
     @if (IsWeb)
     {
@@ -48,7 +56,7 @@
 
     @if (_info is not null)
     {
-        @if (_info.HasErrors)
+        @if (_inOutlook == true && _info.HasErrors)
         {
             <div class="oei-warn">
                 @foreach (var e in _info.Errors!)
@@ -133,6 +141,7 @@
     private OutlookMessageInfo? _info;
     private bool _loading;
     private bool _live;
+    private bool? _inOutlook;   // null = unknown, false = plain browser (dev mock)
     private DotNetObjectReference<Email>? _selfRef;
 
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
@@ -144,18 +153,30 @@
         if (!firstRender) return;
         try
         {
-            _selfRef = DotNetObjectReference.Create(this);
-            // Realtime: ItemChanged (desktop/pinned) + a polling fallback for
-            // web/outlook.com where ItemChanged/pinning isn't supported.
-            var handler = await JS.InvokeAsync<bool>("officeInterop.registerItemChanged", _selfRef);
-            var poll = await JS.InvokeAsync<bool>("officeInterop.startItemPolling", _selfRef, 2000);
-            _live = handler || poll;
             await ReadMessageAsync();
+            _inOutlook = _info?.HostAvailable == true;
+
+            // Only wire realtime when actually inside Outlook.
+            if (_inOutlook == true)
+            {
+                _selfRef = DotNetObjectReference.Create(this);
+                var handler = await JS.InvokeAsync<bool>("officeInterop.registerItemChanged", _selfRef);
+                var poll = await JS.InvokeAsync<bool>("officeInterop.startItemPolling", _selfRef, 2000);
+                _live = handler || poll;
+            }
+            StateHasChanged();
         }
         catch
         {
+            _inOutlook = false;   // assume browser/dev if interop blows up
             StateHasChanged();
         }
+    }
+
+    private void ApplyMock(OutlookMessageInfo info)
+    {
+        _info = info;
+        StateHasChanged();
     }
 
     [JSInvokable] public Task OnItemChanged() => ReadMessageAsync();

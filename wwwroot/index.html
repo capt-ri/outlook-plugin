@@ -6,6 +6,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Outlook Event Inspector</title>
     <base href="/" />
+    <!-- Guard the History API BEFORE office.js loads. Outside an Office client,
+         office.js wipes history.pushState/replaceState, which breaks Blazor's
+         router. These setters ignore non-function assignments so the real
+         methods survive. -->
+    <script>
+        (function () {
+            var h = window.history;
+            var realPush = h.pushState.bind(h);
+            var realReplace = h.replaceState.bind(h);
+            try {
+                Object.defineProperty(h, 'pushState', {
+                    configurable: true,
+                    get: function () { return realPush; },
+                    set: function (v) { if (typeof v === 'function') realPush = v.bind(h); }
+                });
+                Object.defineProperty(h, 'replaceState', {
+                    configurable: true,
+                    get: function () { return realReplace; },
+                    set: function (v) { if (typeof v === 'function') realReplace = v.bind(h); }
+                });
+            } catch (e) { /* ignore */ }
+        })();
+    </script>
     <!-- Office.js: must load from Microsoft's CDN so Outlook recognises the add-in -->
     <script src="https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js"></script>
     <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
@@ -30,7 +53,11 @@
         <span class="dismiss">🗙</span>
     </div>
     <script src="_framework/blazor.webassembly.js"></script>
-    <script src="js/officeInterop.js"></script>
+    <script>
+        // Dev cache-bust: always fetch the latest officeInterop.js so edits
+        // aren't masked by the browser cache.
+        document.write('<scr' + 'ipt src="js/officeInterop.js?t=' + Date.now() + '"></scr' + 'ipt>');
+    </script>
 </body>
 
 </html>

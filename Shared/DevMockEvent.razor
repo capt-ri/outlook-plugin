@@ -1,0 +1,79 @@
+@* Dev-only mock builder for the event inspector. Shown when not running in Outlook. *@
+<div class="oei-card accent-primary">
+    <div class="hd">Developer mock — not running in Outlook</div>
+    <div class="bd">
+        <div class="oei-note" style="margin-bottom:8px">
+            Office.js isn't available in a plain browser. Enter sample values to preview the
+            inspector and the Salesforce sync banner.
+        </div>
+        <div class="oei-field"><label>Subject</label><input class="oei-input" @bind="Subject" /></div>
+        <div class="oei-field"><label>Organizer</label><input class="oei-input" @bind="Organizer" /></div>
+        <div class="oei-field"><label>Required attendees (comma/semicolon separated)</label><input class="oei-input" @bind="Attendees" /></div>
+        <div class="oei-field"><label>Exchange ID (Salesforce sync key)</label><input class="oei-input" @bind="ExchangeId" /></div>
+        <div class="oei-field"><label>Series / master ID</label><input class="oei-input" @bind="SeriesId" /></div>
+        <label class="oei-check2"><input type="checkbox" @bind="IsRecurring" /> <b>Recurring</b></label>
+        @if (IsRecurring)
+        {
+            <div class="oei-field">
+                <label>Recurrence type</label>
+                <select class="oei-select" @bind="RecurrenceType">
+                    <option value="daily">daily</option>
+                    <option value="weekly">weekly</option>
+                    <option value="monthly">monthly</option>
+                </select>
+            </div>
+        }
+        <button class="oei-btn primary sm" @onclick="ApplyAsync">Load mock into inspector</button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback<OutlookEventInfo> OnApply { get; set; }
+
+    private string Subject = "test recring";
+    private string Organizer = "Roman Rimorin <rjrimorin@gmail.com>";
+    private string Attendees = "alice@contoso.com; bob@contoso.com";
+    private string ExchangeId = "AAMkAGImockEventId0001";
+    private string SeriesId = "AAMkAGImockSeriesId01";
+    private bool IsRecurring = true;
+    private string RecurrenceType = "weekly";
+
+    private async Task ApplyAsync()
+    {
+        var info = new OutlookEventInfo
+        {
+            HostAvailable = true,
+            Platform = "DevBrowser",
+            Host = "DevBrowser",
+            ItemType = "appointment",
+            IsAppointment = true,
+            Subject = Subject,
+            Organizer = Organizer,
+            RequiredAttendees = Split(Attendees),
+            OptionalAttendees = new(),
+            ExchangeId = ExchangeId,
+            SeriesId = string.IsNullOrWhiteSpace(SeriesId) ? null : SeriesId,
+            Start = "2026-06-22T14:00:00Z",
+            End = "2026-06-22T14:30:00Z",
+            IsRecurring = IsRecurring,
+            Classification = !IsRecurring
+                ? "Single (non-recurring) appointment"
+                : (string.IsNullOrWhiteSpace(SeriesId)
+                    ? "Series master (the recurring meeting itself)"
+                    : "Occurrence / instance of a recurring series"),
+            RecurrenceType = IsRecurring ? RecurrenceType : null,
+            RecurrenceTimeZone = IsRecurring ? "Pacific Standard Time" : null,
+            SeriesStartDate = IsRecurring ? "2026-06-01" : null,
+            SeriesEndDate = IsRecurring ? "2026-12-31" : null,
+            SeriesStartTime = IsRecurring ? "14:00:00" : null,
+            SeriesEndTime = IsRecurring ? "14:30:00" : null,
+            SeriesDurationMinutes = IsRecurring ? 30 : null
+        };
+        await OnApply.InvokeAsync(info);
+    }
+
+    private static List<string> Split(string s) =>
+        string.IsNullOrWhiteSpace(s)
+            ? new()
+            : s.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+}

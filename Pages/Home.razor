@@ -25,9 +25,19 @@
     {
         <div class="oei-note">Initializing…</div>
     }
-    else if (!_ctx.HostAvailable)
+
+    @* ===================== DEV MOCK (plain browser) ===================== *@
+    @if (_ctx is { HostAvailable: false })
     {
-        <div class="oei-warn">⚠️ Office.js host not detected. Open this inside Outlook by sideloading the add-in.</div>
+        <DevMockEvent OnApply="ApplyMock" />
+
+        @if (_info is { HostAvailable: true })
+        {
+            <SyncBanner Kind="event"
+                        ItemId="@(!string.IsNullOrEmpty(_info.ExchangeId) ? _info.ExchangeId : _info.SeriesId)"
+                        Subject="@_info.Subject" />
+            <EventInspector Info="_info" />
+        }
     }
 
     @* ============================ READ MODE ============================ *@
@@ -235,6 +245,12 @@
             _ctx ??= new OfficeContext { HostAvailable = false, Mode = "none" };
             StateHasChanged();
         }
+    }
+
+    private void ApplyMock(OutlookEventInfo info)
+    {
+        _info = info;
+        StateHasChanged();
     }
 
     [JSInvokable] public Task OnItemChanged() => ReadEventAsync();

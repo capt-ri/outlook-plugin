@@ -1,0 +1,59 @@
+@* Dev-only mock builder for the email inspector. Shown when not running in Outlook. *@
+<div class="oei-card accent-primary">
+    <div class="hd">Developer mock — not running in Outlook</div>
+    <div class="bd">
+        <div class="oei-note" style="margin-bottom:8px">
+            Office.js isn't available in a plain browser. Enter sample values to preview the
+            inspector and the Salesforce sync banner.
+        </div>
+        <div class="oei-field"><label>Subject</label><input class="oei-input" @bind="Subject" /></div>
+        <div class="oei-field"><label>From</label><input class="oei-input" @bind="From" /></div>
+        <div class="oei-field"><label>To (comma/semicolon separated)</label><input class="oei-input" @bind="To" /></div>
+        <div class="oei-field"><label>Internet Message ID (Salesforce sync key)</label><input class="oei-input" @bind="InternetMessageId" /></div>
+        <div class="oei-field"><label>Message ID (Exchange)</label><input class="oei-input" @bind="ItemId" /></div>
+        <div class="oei-field"><label>Conversation ID</label><input class="oei-input" @bind="ConversationId" /></div>
+        <button class="oei-btn primary sm" @onclick="ApplyAsync">Load mock into inspector</button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback<OutlookMessageInfo> OnApply { get; set; }
+
+    private string Subject = "Quarterly review notes";
+    private string From = "Jane Doe <jane@contoso.com>";
+    private string To = "rjrimorin@gmail.com";
+    private string InternetMessageId = "<demo-0001@contoso.com>";
+    private string ItemId = "AAMkAGImockItemId0001";
+    private string ConversationId = "AAQkAGImockConvId0001";
+
+    private async Task ApplyAsync()
+    {
+        var info = new OutlookMessageInfo
+        {
+            HostAvailable = true,
+            IsMessage = true,
+            Mode = "mock",
+            Platform = "DevBrowser",
+            ItemType = "message",
+            Subject = Subject,
+            NormalizedSubject = Subject,
+            From = From,
+            Sender = From,
+            To = Split(To),
+            Cc = new(),
+            Bcc = new(),
+            InternetMessageId = InternetMessageId,
+            ItemId = ItemId,
+            ConversationId = ConversationId,
+            DateTimeCreated = "2026-06-22T07:00:00Z",
+            DateTimeModified = "2026-06-22T07:05:00Z",
+            Attachments = new()
+        };
+        await OnApply.InvokeAsync(info);
+    }
+
+    private static List<string> Split(string s) =>
+        string.IsNullOrWhiteSpace(s)
+            ? new()
+            : s.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+}

@@ -118,11 +118,14 @@
         // Host availability + current activation mode (read/compose/none).
         getContext: async function () {
             const ready = await ensureReady();
+            // "In Outlook" means a real mailbox exists — NOT merely that office.js
+            // loaded (it loads in a plain browser too and fires onReady).
+            const inOutlook = ready.available && !!safe(function () { return Office.context.mailbox; });
             const ctx = {
-                hostAvailable: ready.available,
+                hostAvailable: inOutlook,
                 host: ready.host || null,
                 platform: ready.platform || null,
-                mode: ready.available ? detectMode() : "none"
+                mode: inOutlook ? detectMode() : "none"
             };
             return JSON.stringify(ctx);
         },
@@ -255,7 +258,12 @@
             result.platform = ready.platform;
 
             const mailbox = safe(function () { return Office.context.mailbox; });
-            if (!mailbox) { result.errors.push("Mailbox API unavailable in this context."); return JSON.stringify(result); }
+            if (!mailbox) {
+                // office.js loaded but no mailbox -> running outside Outlook (dev/browser).
+                result.hostAvailable = false;
+                result.errors.push("Running outside Outlook (no mailbox).");
+                return JSON.stringify(result);
+            }
 
             const item = safe(function () { return mailbox.item; });
             if (!item) { result.errors.push("No item selected. Open or click an appointment in your calendar."); return JSON.stringify(result); }
@@ -400,7 +408,12 @@
             result.platform = ready.platform;
 
             const mailbox = safe(function () { return Office.context.mailbox; });
-            if (!mailbox) { result.errors.push("Mailbox API unavailable in this context."); return JSON.stringify(result); }
+            if (!mailbox) {
+                // office.js loaded but no mailbox -> running outside Outlook (dev/browser).
+                result.hostAvailable = false;
+                result.errors.push("Running outside Outlook (no mailbox).");
+                return JSON.stringify(result);
+            }
 
             const item = safe(function () { return mailbox.item; });
             if (!item) { result.errors.push("No item selected. Open an email message."); return JSON.stringify(result); }
